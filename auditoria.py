@@ -56,14 +56,15 @@ for epoch in range(epochs):
             error_hidden = delta_output * weights_hidden_output[h][0]
             delta_hidden[h] = error_hidden * sigmoid_derivative(hidden_outputs[h])
 
-        # Atualização dos pesos
+        # Atualização dos pesos da camada Oculta -> Saída
         for h in range(3):
             weights_hidden_output[h][0] += learning_rate * delta_output * hidden_outputs[h]
         bias_output[0] += learning_rate * delta_output
 
+        # Atualização dos pesos da camada Entrada -> Oculta (CORRIGIDO)
         for inp in range(2):
             for h in range(3):
-                weights_input_hidden[inp][h] += learning_rate * delta_hidden[h] * inputs_treino[inp]
+                weights_input_hidden[inp][h] += learning_rate * delta_hidden[h] * inputs_treino[i][inp]
             bias_hidden[h] += learning_rate * delta_hidden[h]
 
 print("[+] IA treinada com sucesso!\n")
@@ -75,28 +76,25 @@ print("[+] IA treinada com sucesso!\n")
 print(f"{'PID':<8} | {'DONO':<6} | {'PASTA SUSPEITA?':<15} | {'SCORE IA':<10} | {'COMANDO'}")
 print("-" * 80)
 
-# Pastas comumente usadas em táticas de evasão/persistência
 pastas_perigosas = ["/tmp", "/dev/shm", "/var/tmp", "/run/user"]
 
-# Varre o diretório /proc
 for pid_dir in os.listdir("/proc"):
-    if pid_dir.isdigit():  # Filtra apenas pastas que são PIDs
+    if pid_dir.isdigit():
         pid = pid_dir
         path_proc = f"/proc/{pid}"
 
         try:
-            # 1. Descobrir se é Root (Lendo /proc/[PID]/status)
+            # 1. Descobrir se é Root
             is_root = 0
             with open(f"{path_proc}/status", "r") as f:
                 for line in f:
                     if line.startswith("Uid:"):
-                        # O primeiro número é o Real UID. 0 significa root.
                         uid = line.split()[1]
                         if uid == "0":
                             is_root = 1
                         break
 
-            # 2. Descobrir o caminho do executável (Lendo o link simbólico /proc/[PID]/exe)
+            # 2. Descobrir o caminho do executável
             exe_path = os.readlink(f"{path_proc}/exe")
 
             is_suspicious_path = 0
@@ -105,16 +103,15 @@ for pid_dir in os.listdir("/proc"):
                     is_suspicious_path = 1
                     break
 
-            # 3. Ler a linha de comando executada para exibir no relatório
+            # 3. Ler a linha de comando executada
             with open(f"{path_proc}/cmdline", "r") as f:
                 cmd = f.read().replace("\x00", " ").strip()
             if not cmd:
-                cmd = exe_path  # Se cmdline estiver vazio, usa o caminho do executável
+                cmd = exe_path
 
             # =====================================================================
             # 3. VEREDITO DA IA
             # =====================================================================
-            # Passa os dados coletados do Debian pela nossa rede treinada
             hidden_inputs = [bias_hidden[h] + (is_root * weights_input_hidden[0][h]) + (
                         is_suspicious_path * weights_input_hidden[1][h]) for h in range(3)]
             hidden_outputs = [sigmoid(x) for x in hidden_inputs]
@@ -122,15 +119,12 @@ for pid_dir in os.listdir("/proc"):
             output_input = bias_output[0] + sum(hidden_outputs[h] * weights_hidden_output[h][0] for h in range(3))
             score_ia = sigmoid(output_input)
 
-            # Filtragem para o relatório: Mostrar tudo, mas destacar os scores altos
             dono = "root" if is_root == 1 else "user"
             pasta_status = "SIM" if is_suspicious_path == 1 else "Nao"
 
-            # Só exibe se o score passar de um limite mínimo para não inundar a tela,
-            # ou se você quiser ver o comportamento, ajuste o filtro.
+            # Exibe se o score passar de um limiar mínimo ou for um caminho suspeito simulado
             if score_ia > 0.1 or is_suspicious_path == 1:
                 print(f"{pid:<8} | {dono:<6} | {pasta_status:<15} | {score_ia:.4f}   | {cmd[:40]}")
 
         except (FileNotFoundError, ProcessLookupError, PermissionError):
-            # Processos que sumiram no meio do caminho ou restrições de permissão do kernel
             continue
